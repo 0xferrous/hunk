@@ -8,6 +8,8 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Changed
 
+- Removed the Bun-compiled binary from the Nix package; the package now installs a thin wrapper around the Nix-provided Bun runtime.
+
 ### Fixed
 
 ## [0.12.0] - 2026-05-12

@@ -2,6 +2,7 @@
   bun,
   bun2nix,
   lib,
+  makeWrapper,
   ...
 }: let
   packageJson = lib.importJSON ../package.json;
@@ -16,24 +17,34 @@ in
       bunNix = ./bun.lock.nix;
     };
 
+    nativeBuildInputs = [
+      bun
+      makeWrapper
+    ];
+
     buildPhase = ''
       runHook preBuild
-      mkdir -p .bun-tmp .bun-install
-      BUN_TMPDIR=$PWD/.bun-tmp \
-      BUN_INSTALL=$PWD/.bun-install \
-      ${bun}/bin/bun build --compile "./src/main.tsx" --outfile "hunk-bin"
+      bun run build:npm
       runHook postBuild
     '';
 
     installPhase = ''
       runHook preInstall
-      mkdir -p $out/bin
-      cp -p ./hunk-bin $out/bin/hunk
-      cp -r ./skills $out/
+
+      mkdir -p $out/share/$pname $out/bin
+      cp -r ./dist/npm $out/share/$pname/dist
+      cp -r ./skills $out/share/$pname/
+      cp -p ./README.md $out/share/$pname/
+      cp -p ./LICENSE $out/share/$pname/
+
+      makeWrapper ${bun}/bin/bun $out/bin/hunk \
+        --add-flags "$out/share/$pname/dist/main.js"
+
       runHook postInstall
     '';
 
-    # See https://nix-community.github.io/bun2nix/building-packages/hook.html#arguments for options
+    # Keep the installed command as a thin wrapper so the package does not
+    # embed Bun into the resulting bin/hunk artifact.
     dontFixup = true;
     dontStrip = true;
     dontRunLifecycleScripts = true;
