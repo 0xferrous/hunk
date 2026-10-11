@@ -109,6 +109,39 @@ describe("static diff pager", () => {
     expect(plain).not.toContain("No files match the current filter.");
   });
 
+  test.each(["a/data.bin", "b/data.bin"])(
+    "renders the exact combined binary path %s",
+    async (path) => {
+      const plain = stripAnsi(
+        await renderStaticDiffPager(
+          `diff --cc ${path}\nindex 1111111,2222222..0000000\nBinary files differ\n`,
+        ),
+      );
+      expect(plain).toContain(`${path} modified +0 -0`);
+    },
+  );
+
+  test.each([
+    ["a/notes.txt", "a/notes.txt"],
+    ["i/a/notes.txt", "w/a/notes.txt"],
+  ])("renders combined path prefixes %s / %s", async (oldPath, newPath) => {
+    const plain = stripAnsi(
+      await renderStaticDiffPager(
+        [
+          "diff --cc a/notes.txt",
+          `--- ${oldPath}`,
+          `+++ ${newPath}`,
+          "@@@ -1 -1 +1 @@@",
+          "--old",
+          "++new",
+          "",
+        ].join("\n"),
+      ),
+    );
+    expect(plain).toContain("a/notes.txt modified +1 -1");
+    expect(plain).toContain("new");
+  });
+
   test("honors configured hidden line numbers and hunk headers", async () => {
     const patchText =
       "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-const value = 1;\n+const value = 2;\n";

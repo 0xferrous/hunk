@@ -54,18 +54,23 @@ function gitSidePath(path: string, side: "a" | "b") {
 
 /** Rewrite one combined-diff file header into a conventional two-sided Git header. */
 function rewriteCombinedFileHeader(
-  line: string,
   fallbackPath: string,
   oldPath: string | undefined,
   newPath: string | undefined,
 ) {
-  const fallback = line.slice(line.indexOf(" ") + 1).trimEnd();
-  const left = (oldPath ?? fallbackPath) || fallback;
-  const right = (newPath ?? fallbackPath) || fallback;
-  const leftPath = left === "/dev/null" ? right : left;
-  const rightPath = right === "/dev/null" ? left : right;
+  // Combined file headers have no side prefix, even when the real path starts with a/ or b/.
+  // Preserve unified-header pairs verbatim so the existing sanitizer can distinguish canonical,
+  // noprefix, and mnemonic prefixes and rewrite the unified headers along with the Git header.
+  const quoted = fallbackPath.match(/^"((?:\\.|[^"\\])*)"$/);
+  const fallback = quoted?.[1] ?? fallbackPath;
+  const leftFallback = quoted ? `"a/${fallback}"` : `a/${fallback}`;
+  const rightFallback = quoted ? `"b/${fallback}"` : `b/${fallback}`;
+  const left = oldPath ?? leftFallback;
+  const right = newPath ?? rightFallback;
+  const leftPath = left === "/dev/null" ? gitSidePath(right, "a") : left;
+  const rightPath = right === "/dev/null" ? gitSidePath(left, "b") : right;
 
-  return `diff --git ${gitSidePath(leftPath, "a")} ${gitSidePath(rightPath, "b")}`;
+  return `diff --git ${leftPath} ${rightPath}`;
 }
 
 /** Convert a combined hunk header to the first-parent unified hunk it contains. */
@@ -95,6 +100,10 @@ function rewriteCombinedHunkHeader(line: string) {
 
 /** Convert Git combined conflict patches into first-parent unified patches Pierre can render. */
 export function normalizeCombinedGitPatch(patchText: string) {
+  if (!/^diff --(?:cc|combined) /m.test(patchText)) {
+    return patchText;
+  }
+
   const lines = patchText.split("\n");
   const normalizedLines: string[] = [];
   let combinedHeaderIndex: number | undefined;
@@ -119,9 +128,7 @@ export function normalizeCombinedGitPatch(patchText: string) {
       combinedFallbackPath = combinedHeader[2] ?? "";
       // Rewrite immediately so binary combined entries, which have no unified file headers,
       // still reach the normal Git patch parser.
-      normalizedLines.push(
-        rewriteCombinedFileHeader(line, combinedFallbackPath, undefined, undefined),
-      );
+      normalizedLines.push(rewriteCombinedFileHeader(combinedFallbackPath, undefined, undefined));
       continue;
     }
 
@@ -149,7 +156,6 @@ export function normalizeCombinedGitPatch(patchText: string) {
     if (combinedParentCount === undefined && line.startsWith("+++ ")) {
       combinedNewPath = unifiedFilePath(line, "+++ ");
       normalizedLines[combinedHeaderIndex] = rewriteCombinedFileHeader(
-        normalizedLines[combinedHeaderIndex]!,
         combinedFallbackPath,
         combinedOldPath,
         combinedNewPath,
@@ -621,7 +627,7 @@ function rewriteUnifiedFileLine(
       : decodedPathName;
 
   const prefixedPath =
-    mode === "prepend-prefix"
+    mode === "prepend-prefix" || mode === "strip"
       ? `${prefix}${normalizedPath}`
       : withGitPrefix(normalizedPath, prefix);
   return `${marker}${prefixedPath}${suffix}`;

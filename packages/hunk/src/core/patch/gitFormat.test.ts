@@ -437,6 +437,47 @@ describe("combined Git patch normalization", () => {
     );
   });
 
+  test.each(["a/data.bin", "b/data.bin", '"a/tab\\t.bin"'])(
+    "preserves unprefixed binary combined path %s",
+    (path) => {
+      const normalized = sanitizeGitPatch(
+        `diff --cc ${path}\nindex 1111111,2222222..0000000\nBinary files differ\n`,
+      );
+      const expectedPath = path === '"a/tab\\t.bin"' ? "a/tab\t.bin" : path;
+      if (normalized.filePaths[0]) {
+        expect(normalized.filePaths[0].path).toBe(expectedPath);
+      } else {
+        expect(normalized.text).toContain(`diff --git a/${path} b/${path}`);
+      }
+    },
+  );
+
+  test.each([
+    ["a/notes.txt", "a/notes.txt"],
+    ["i/a/notes.txt", "w/a/notes.txt"],
+  ])("normalizes combined unified-header pair %s / %s", (oldPath, newPath) => {
+    const input = [
+      "diff --cc a/notes.txt",
+      `--- ${oldPath}`,
+      `+++ ${newPath}`,
+      "@@@ -1 -1 +1 @@@",
+      "--old",
+      "++new",
+      "",
+    ].join("\n");
+    expect(sanitizeGitPatchText(input)).toBe(
+      [
+        "diff --git a/a/notes.txt b/a/notes.txt",
+        "--- a/a/notes.txt",
+        "+++ b/a/notes.txt",
+        "@@ -1 +1 @@",
+        "-old",
+        "+new",
+        "",
+      ].join("\n"),
+    );
+  });
+
   test("leaves ordinary unified patches unchanged", () => {
     const patch = "diff --git a/a.txt b/a.txt\n@@ -1 +1 @@\n-old\n+new\n";
 
